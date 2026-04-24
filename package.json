@@ -27,6 +27,7 @@
         "lucide-vue-next": "^1.0.0",
         "reka-ui": "^2.9.6",
         "tailwind-merge": "^3.5.0",
-        "tailwindcss-animate": "^1.0.7"
+        "tailwindcss-animate": "^1.0.7",
+        "ziggy-js": "^2.6.2"
     }
 }
