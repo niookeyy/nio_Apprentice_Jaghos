@@ -6,49 +6,79 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use App\Models\Extension;
+use App\Models\Config;
 
 class DomainCheckController extends Controller
 {
     public function check(Request $request)
     {
         $request->validate([
-            'keyword' => 'required|string',
+            'keyword' => 'required|string|max:100',
         ]);
 
-        $keyword = strtolower(trim($request->keyword));
-        $extensions = Extension::with('categories')->limit(10)->get();
+        $katakunci = strtolower(trim($request->keyword));
 
-        $results = [];
+        $batas = (int) (
+            Config::where('config_key', 'SEARCH_DOMAIN_LIMIT_SHOW_DOMAIN')->value('config_value') ?? 10
+        );
 
-        foreach ($extensions as $ext) {
-            $domain = $keyword . '.' . $ext->extension;
+        $extensions = Extension::with('categories')
+            ->limit($batas)
+            ->get();
+
+        $jawaban = [];
+
+        foreach ($extensions as $yanto) {
+            $domain = $katakunci . '.' . ltrim($yanto->extension, '.');
 
             try {
-                $response = Http::withHeaders([
+                $respon = Http::withHeaders([
                     'X-WHOIS-AUTH' => config('services.whois.key'),
                     'Content-Type' => 'application/json',
                 ])->post('https://dev-whois.jagoanhosting.com/api/v2/whois', [
                     'domain' => $domain,
                 ]);
 
-                $data = $response->json();
+                $data = $respon->json();
 
-                $results[] = [
+                $isAvailable = data_get($data, 'data.is_available', false);
+                $isPremium = data_get($data, 'data.is_premium', false);
+
+                $status = 'unavailable';
+
+                if ($isPremium) {
+                    $status = 'premium';
+                } elseif ($isAvailable) {
+                    $status = 'available';
+                }
+
+                $jawaban[] = [
                     'domain' => $domain,
-                    'available' => data_get($data, 'data.available', false),
-                    'register_price' => $ext->register_price,
-                    'gimmick_price' => $ext->gimmick_price,
-                    'categories' => $ext->categories,
+                    'available' => $isAvailable,
+                    'is_premium' => $isPremium,
+                    'status' => $status,
+                    'register_price' => $yanto->register_price,
+                    'gimmick_price' => $yanto->gimmick_price,
+                    'categories' => $yanto->categories,
+                    'raw' => $data,
                 ];
-            } catch (\Exception $e) {
-                $results[] = [
+            } catch (\Throwable $e) {
+                $jawaban[] = [
                     'domain' => $domain,
                     'available' => false,
+                    'is_premium' => false,
+                    'status' => 'error',
+                    'register_price' => $yanto->register_price,
+                    'gimmick_price' => $yanto->gimmick_price,
+                    'categories' => $yanto->categories,
                     'error' => $e->getMessage(),
                 ];
             }
         }
 
-        return response()->json($results);
+        return response()->json([
+            'keyword' => $katakunci,
+            'results' => $jawaban,
+        ]);
     }
 }
